@@ -21,6 +21,11 @@ async function hashMessage(message) {
   return mappedValue;
 }
 
+function isActive(startDate, endDate) {
+  let currentDate = new Date();
+  return currentDate >= startDate && currentDate <= endDate;
+}
+
 async function isEnabled(experiments, name, userID) {
   // Find target experiment based on name
   let experiment = experiments.filter((exp) => exp.name === name)[0];
@@ -31,9 +36,8 @@ async function isEnabled(experiments, name, userID) {
   // Return false if current date is outside of date range for experiment
   let startDate = new Date(experiment.start_date);
   let endDate = new Date(experiment.end_date);
-  let currentDate = new Date();
 
-  if (currentDate > endDate || currentDate < startDate) {
+  if (!isActive(startDate, endDate)) {
     return false;
   }
 
@@ -51,7 +55,11 @@ async function isEnabled(experiments, name, userID) {
   } else if (experiment.type_id === 3) {
     let hashedID = await hashMessage(userID);
 
-    let type3Experiments = experiments.filter((exp) => exp.type_id === 3);
+    let type3Experiments = experiments.filter(
+      (exp) =>
+        exp.type_id === 3 &&
+        isActive(new Date(exp.start_date), new Date(exp.end_date))
+    );
     let [segmentStart, segmentEnd] = [0, 0];
 
     for (let i = 0; i < type3Experiments.length; i++) {
