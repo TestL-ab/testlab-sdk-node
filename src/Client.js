@@ -13,6 +13,8 @@ class Client {
   addContext(req, contextObj) {
     if (!contextObj || !contextObj.userID) {
       this.context = { ...contextObj, userID: uuid(), ip: req.ip };
+    } else if (!contextObj.ip) {
+      this.context = { ...contextObj, ip: req.ip };
     } else {
       this.context = contextObj;
     }
