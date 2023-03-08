@@ -8,7 +8,8 @@ class Config {
 
   async connect() {
     const client = new Client(this);
-    await client.getExperiments();
+    await client.getFeatures();
+    await client.addDefaultContext();
     client.timedFetch(this.interval);
     return client;
   }

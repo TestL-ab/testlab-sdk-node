@@ -6,75 +6,75 @@ class Client {
   constructor(config) {
     this.config = config;
     this.context = undefined;
-    this.experiments = {};
+    this.features = {};
   }
 
-  // If userId is not provided as context, one will be automatically generated
-  addContext(req, contextObj) {
-    if (!contextObj || !contextObj.userID) {
-      this.context = { ...contextObj, userID: uuid(), ip: req.ip };
-    } else if (!contextObj.ip) {
-      this.context = { ...contextObj, ip: req.ip };
-    } else {
-      this.context = contextObj;
-    }
+  // UserID and IP are automatically populated in context when client is initialized
+  async addDefaultContext() {
+    let ipObj = await this.getIp();
+    let ip = ipObj.ip;
+    this.context = { userID: uuid(), ip: ip };
   }
 
-  async getFeatureValue(name) {
-    let experiment = this.experiments.filter((exp) => exp.name === name)[0];
+  updateContext(contextObj) {
+    this.context = { ...this.context, ...contextObj };
+  }
 
-    if (experiment.type_id != 3) {
-      return await isEnabled(this.experiments, name, this.context.userID);
+  async getIp() {
+    const response = await axios.get("https://ipapi.co/json/");
+    return response.data;
+  }
+
+  getFeatureValue(name) {
+    let feature = this.features.filter((exp) => exp.name === name)[0];
+
+    if (feature.type_id != 3) {
+      return isEnabled(this.features, name, this.context.userID);
     } else {
-      let enabled = await isEnabled(
-        this.experiments,
-        name,
-        this.context.userID
-      );
-      let variant = await getVariant(
-        this.experiments,
-        name,
-        this.context.userID
-      );
-      let users = await this.#getUsers();
-      let existingUser = users.filter(
-        (user) =>
-          user.id === this.context.userID && user.variant_id === variant.id
-      )[0];
-      if (enabled && variant && !existingUser) {
-        this.#createUser({
-          id: this.context.userID,
-          variant_id: variant.id,
-          ip_address: this.context.ip,
-        });
-      }
+      let enabled = isEnabled(this.features, name, this.context.userID);
+      let variant = getVariant(this.features, name, this.context.userID);
+      this.getUsers()
+        .then((users) => {
+          let existingUser = users.filter(
+            (user) =>
+              user.id === this.context.userID && user.variant_id === variant.id
+          )[0];
+          if (enabled && variant && !existingUser) {
+            this.createUser({
+              id: this.context.userID,
+              variant_id: variant.id,
+              ip_address: this.context.ip,
+            });
+          }
+        })
+        .catch((error) =>
+          console.log("Unable to retrieve existing users", error)
+        );
       return enabled && variant;
     }
   }
 
-  async getExperiments() {
-    let experiments;
+  async getFeatures() {
+    let features;
     try {
-      experiments = await axios.get(
-        `${this.config.serverAddress}/api/experiment`
-      );
-      this.experiments = experiments.data;
+      features = await axios.get(`${this.config.serverAddress}/api/feature`);
+      this.features = features.data;
     } catch (error) {
-      console.log("Error fetching experiments", error);
+      console.log("Error fetching features", error);
     }
   }
 
   timedFetch(interval) {
     if (interval > 0) {
       this.timer = setInterval(
-        () => this.fetchExperiments(),
+        () => this.fetchFeatures(),
         this.config.interval
       );
     }
   }
 
-  async fetchExperiments() {
-    let experiments;
+  async fetchFeatures() {
+    let features;
     const lastModified = new Date(Date.now() - this.config.interval);
     try {
       const config = {
@@ -82,20 +82,20 @@ class Client {
           "If-Modified-Since": lastModified.toUTCString(),
         },
       };
-      experiments = await axios.get(
-        `${this.config.serverAddress}/api/experiment`,
+      features = await axios.get(
+        `${this.config.serverAddress}/api/feature`,
         config
       );
-      if (experiments.status === 304) {
-        return this.experiments;
+      if (features.status === 304) {
+        return this.features;
       }
-      return (this.experiments = experiments.data);
+      return (this.features = features.data);
     } catch (error) {
-      console.log("Error fetching experiments:", error);
+      console.log("Error fetching features:", error);
     }
   }
 
-  async #getUsers() {
+  async getUsers() {
     try {
       let users = await axios.get(`${this.config.serverAddress}/api/users`);
       return users.data;
@@ -104,7 +104,7 @@ class Client {
     }
   }
 
-  async #createUser({ id, variant_id, ip_address }) {
+  async createUser({ id, variant_id, ip_address }) {
     try {
       const response = await axios.post(
         `${this.config.serverAddress}/api/users`,
