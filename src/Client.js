@@ -27,6 +27,7 @@ class Client {
 
   getFeatureValue(name) {
     let feature = this.features.filter((exp) => exp.name === name)[0];
+    if (!feature) return false;
 
     if (feature.type_id != 3) {
       return isEnabled(this.features, name, this.context.userID);
