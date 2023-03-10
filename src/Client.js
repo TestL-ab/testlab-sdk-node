@@ -9,7 +9,6 @@ class Client {
     this.features = {};
   }
 
-  // UserID and IP are automatically populated in context when client is initialized
   async addDefaultContext() {
     let ipObj = await this.getIp();
     let ip = ipObj.ip;
@@ -26,7 +25,9 @@ class Client {
   }
 
   getFeatureValue(name) {
-    let feature = this.features.filter((exp) => exp.name === name)[0];
+    let feature = this.features.experiments
+      .concat(this.features.toggles, this.features.rollouts)
+      .filter((f) => f.name === name)[0];
     if (!feature) return false;
 
     if (feature.type_id != 3) {
@@ -55,16 +56,6 @@ class Client {
     }
   }
 
-  async getFeatures() {
-    let features;
-    try {
-      features = await axios.get(`${this.config.serverAddress}/api/feature`);
-      this.features = features.data;
-    } catch (error) {
-      console.log("Error fetching features", error);
-    }
-  }
-
   timedFetch(interval) {
     if (interval > 0) {
       this.timer = setInterval(
@@ -78,17 +69,23 @@ class Client {
     let features;
     const lastModified = new Date(Date.now() - this.config.interval);
     try {
-      const config = {
-        headers: {
-          "If-Modified-Since": lastModified.toUTCString(),
-        },
-      };
-      features = await axios.get(
-        `${this.config.serverAddress}/api/feature`,
-        config
-      );
-      if (features.status === 304) {
-        return this.features;
+      if (!this.features) {
+        features = await axios.get(
+          `${this.config.serverAddress}/api/feature/current`
+        );
+      } else {
+        const config = {
+          headers: {
+            "If-Modified-Since": lastModified.toUTCString(),
+          },
+        };
+        features = await axios.get(
+          `${this.config.serverAddress}/api/feature/current`,
+          config
+        );
+        if (features.status === 304) {
+          return this.features;
+        }
       }
       return (this.features = features.data);
     } catch (error) {

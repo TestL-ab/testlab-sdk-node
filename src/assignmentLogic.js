@@ -14,52 +14,33 @@ function isActive(startDate, endDate) {
 
 function isEnabled(features, name, userID) {
   // Find target feature based on name
-  let feature = features.filter((exp) => exp.name === name)[0];
-  if (!feature) {
-    throw new TypeError("Provided name does not match any feature.");
-  }
+  //let feature = features.filter((exp) => exp.name === name)[0];
+  let feature = features.experiments
+    .concat(features.toggles, features.rollouts)
+    .filter((f) => f.name === name)[0];
+  if (!feature) return false;
 
-  // Return false if current date is outside of date range for feature
+  // Return false if current date is outside of date range for feature or if the feature is not running
   let startDate = new Date(feature.start_date);
   let endDate = new Date(feature.end_date);
 
-  if (!isActive(startDate, endDate)) {
+  if (!isActive(startDate, endDate) || !feature.is_running) {
     return false;
   }
 
-  // Return false if feature is not running (toggled off) or if the hashed ID is outside of the target user_percentage range
+  // Return false if the hashed ID is outside of the target user_percentage range or outside of the range of a given block
 
-  // For Type 3 (features), users can only be assigned to one feature (total percentage of users enrolled in features can not exceed 100%)
-
-  if (feature.type_id === 1) {
-    return feature.is_running ? true : false;
-  } else if (feature.type_id === 2) {
+  if (feature.type_id === 2) {
     let hashedID = hashMessage(userID + name);
-    return feature.is_running && hashedID < feature.user_percentage
-      ? true
-      : false;
+    return hashedID < feature.user_percentage ? true : false;
   } else if (feature.type_id === 3) {
     let hashedID = hashMessage(userID);
+    let blocks = features.userblocks;
+    let blockID = Math.ceil(hashedID * blocks.length);
 
-    let type3features = features.filter(
-      (exp) =>
-        exp.type_id === 3 &&
-        isActive(new Date(exp.start_date), new Date(exp.end_date))
-    );
-    let [segmentStart, segmentEnd] = [0, 0];
-
-    for (let i = 0; i < type3features.length; i++) {
-      segmentEnd += type3features[i].user_percentage;
-      if (
-        hashedID >= segmentStart &&
-        hashedID <= segmentEnd &&
-        type3features[i].name === name
-      ) {
-        return true;
-      } else {
-        segmentStart = segmentEnd;
-      }
-    }
+    return !!blocks.filter(
+      (b) => b.id === blockID && b.feature_id === feature.id
+    )[0];
   }
 
   return false;
@@ -69,30 +50,30 @@ function getVariant(features, name, userID) {
   let hashedID = hashMessage(userID);
   console.log("uuid, hashed", userID, hashedID);
 
-  let feature = features.filter((exp) => exp.name === name)[0];
-  if (!feature) {
-    throw new TypeError("Provided name does not match any feature.");
-  }
-  let variants = feature.variant_arr;
-  let type3features = features.filter((exp) => exp.type_id === 3);
-  let [segmentStart, segmentEnd] = [0, 0];
+  let feature = features.experiments
+    .concat(features.toggles, features.rollouts)
+    .filter((f) => f.name === name)[0];
 
-  for (let i = 0; i < type3features.length; i++) {
-    segmentEnd += type3features[i].user_percentage;
-    if (
-      hashedID >= segmentStart &&
-      hashedID <= segmentEnd &&
-      type3features[i].name === name
-    ) {
-      let runningTotal = segmentStart;
-      for (let i = 0; i < variants.length; i++) {
-        runningTotal += variants[i].weight * variants[i].weight;
-        if (hashedID <= runningTotal) {
-          return variants[i];
-        }
-      }
-    } else {
-      segmentStart = segmentEnd;
+  if (!feature) return false;
+
+  let variants = feature.variant_arr;
+  let blocks = features.userblocks;
+  let blockID = Math.ceil(hashedID * blocks.length);
+
+  let targetBlock = blocks.filter(
+    (b) => b.id === blockID && b.feature_id === feature.id
+  )[0];
+
+  if (!targetBlock) return false;
+
+  let segmentEnd = targetBlock.id / blocks.length;
+  let segmentStart = segmentEnd - 1 / blocks.length;
+
+  let runningTotal = segmentStart;
+  for (let i = 0; i < variants.length; i++) {
+    runningTotal += variants[i].weight * (1 / blocks.length);
+    if (hashedID <= runningTotal) {
+      return { id: variants[i].id, value: variants[i].value };
     }
   }
   return false;
