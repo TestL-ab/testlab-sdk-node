@@ -69,14 +69,18 @@ class Client {
     let features;
     const lastModified = new Date(Date.now() - this.config.interval);
     try {
-      if (!this.features) {
+      if (Object.keys(this.features).length === 0) {
         features = await axios.get(
           `${this.config.serverAddress}/api/feature/current`
         );
       } else {
+        console.log(lastModified.toUTCString());
         const config = {
           headers: {
             "If-Modified-Since": lastModified.toUTCString(),
+          },
+          validateStatus: function (status) {
+            return status >= 200 && status <= 304; // default
           },
         };
         features = await axios.get(
