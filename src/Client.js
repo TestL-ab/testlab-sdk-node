@@ -74,7 +74,6 @@ class Client {
           `${this.config.serverAddress}/api/feature/current`
         );
       } else {
-        console.log(lastModified.toUTCString());
         const config = {
           headers: {
             "If-Modified-Since": lastModified.toUTCString(),
